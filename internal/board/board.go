@@ -21,7 +21,6 @@ const (
 	colRed      = "38;2;229;72;77"   // #E5484D missed
 )
 
-
 func Render(blocks []store.Block, resolution int, now int) string {
 	numCells := 1440 / resolution
 	cells := make([]string, numCells)

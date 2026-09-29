@@ -3,12 +3,39 @@ package store
 import "errors"
 
 type Block struct {
-	ID    int
-	Date  string
-	Start int
-	End   int
-	Title string
-	Done  bool
+	ID    int    `json:"id"`
+	Date  string `json:"date"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
+}
+type Store struct{
+	Next int `json:"next"`
+	Blocks []Block `json:"blocks"`
+
+
+}
+
+var ErrInvalid = errors.New("start must be before end, within 0-1440")
+var ErrOverlap = errors.New("overlaps an existing block")
+
+func (s *Store) Add(b Block) (Block, error){
+	if err := b.Validate(); err != nil{
+		return Block{},err 
+	}
+	for _,e := range s.Blocks{
+		if b.Overlaps(e){
+			return Block{},ErrOverlap
+
+		}
+	}
+	b.ID = s.Next
+	s.Next++
+	s.Blocks = append(s.Blocks,b)
+
+	return b,nil
+
 }
 
 func (b Block) Duration() int {
