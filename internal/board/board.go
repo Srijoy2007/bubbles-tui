@@ -2,21 +2,24 @@ package board
 
 import (
 
-
+	"os"
 	"github.com/Srijoy2007/bubbles-tui/internal/store"
 )
 
-// color hex values from the design
+var noColor = os.Getenv("NO_COLOR") != ""
+
+func colorize(code, glyph string) string {
+	if noColor {
+		return glyph
+	}
+	return "\033[" + code + "m" + glyph + "\033[0m"
+}
 const (
 	colGreen    = "38;2;92;242;165"  // #5CF2A5 focused
 	colDimGreen = "38;2;46;125;91"   // #2E7D5B partial
 	colGray     = "38;2;122;122;122" // #7A7A7A empty / planned
 	colRed      = "38;2;229;72;77"   // #E5484D missed
 )
-
-func colorize(code, glyph string) string {
-	return "\033[" + code + "m" + glyph + "\033[0m"
-}
 
 
 func Render(blocks []store.Block, resolution int, now int) string {
