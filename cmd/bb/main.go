@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/bubbles/v2/textinput"
 
 	"github.com/Srijoy2007/bubbles-tui/internal/board"
 	"github.com/Srijoy2007/bubbles-tui/internal/store"
@@ -16,10 +17,27 @@ type loadedMsg struct {
 	err error
 }
 
+type mode int
+
+const (
+	modeList mode = iota
+	modeAdd
+)
+
 type model struct {
-	store *store.Store
-	today string
-	err   error
+	store  *store.Store
+	today  string
+	err    error
+	mode   mode
+	input  textinput.Model
+	addErr string
+}
+
+func newModel() model {
+	ti := textinput.New()
+	ti.Placeholder = "9-10:30 Deep work"
+	ti.CharLimit = 100
+	return model{today: time.Now().Format("2006-01-02"), input: ti}
 }
 
 func loadCmd() tea.Msg {
@@ -37,9 +55,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.store = msg.s
 		m.err = msg.err
 		return m, nil
+
 	case tea.KeyPressMsg:
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
+		if m.mode == modeAdd {
+			switch msg.String() {
+			case "esc":
+				m.mode = modeList
+				m.input.Reset()
+				m.addErr = ""
+				return m, nil
+			case "enter":
+				b, err := parseAdd(m.today, m.input.Value())
+				if err == nil {
+					_, err = m.store.Add(b)
+				}
+				if err == nil {
+					err = m.store.Save(store.Path())
+				}
+				if err != nil {
+					m.addErr = err.Error()
+					return m, nil
+				}
+				m.mode = modeList
+				m.input.Reset()
+				m.addErr = ""
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+
+		switch msg.String() {
+		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "a":
+			m.mode = modeAdd
+			m.input.Focus()
+			return m, textinput.Blink
 		}
 	}
 	return m, nil
@@ -51,6 +104,15 @@ func (m model) View() tea.View {
 	}
 	if m.store == nil {
 		return tea.NewView("loading...\n")
+	}
+
+	if m.mode == modeAdd {
+		out := "add block (" + m.today + ")\n\n" + m.input.View() + "\n"
+		if m.addErr != "" {
+			out += "\n" + m.addErr + "\n"
+		}
+		out += "\nenter save · esc cancel\n"
+		return tea.NewView(out)
 	}
 
 	out := "boba — " + m.today + "\n\n"
@@ -66,18 +128,14 @@ func (m model) View() tea.View {
 		out += fmt.Sprintf("[%s] %02d:%02d-%02d:%02d  %s\n",
 			mark, b.Start/60, b.Start%60, b.End/60, b.End%60, b.Title)
 	}
-
 	now := time.Now()
-	nowMin := now.Hour()*60 + now.Minute()
-	out += "\n" + board.Render(blocks, 5, nowMin) + "\n"
-	out += "\nq to quit\n"
-
+	out += "\n" + board.Render(blocks, 5, now.Hour()*60+now.Minute()) + "\n"
+	out += "\na add · q quit\n"
 	return tea.NewView(out)
 }
 
 func main() {
-	m := model{today: time.Now().Format("2006-01-02")}
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	if _, err := tea.NewProgram(newModel()).Run(); err != nil {
 		log.Fatal(err)
 	}
 }
