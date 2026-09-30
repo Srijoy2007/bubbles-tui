@@ -2,7 +2,8 @@ package main
 
 import (
 	"log"
-
+	"fmt"
+	"github.com/Srijoy2007/bubbles-tui/internal/art"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -20,6 +21,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() tea.View { return tea.NewView("bubbles\n\npress q to quit\n") }
 
 func main() {
+	fmt.Print(art.Render(art.BobaCup, art.BobaPalette))
+
 	if _, err := tea.NewProgram(model{}).Run(); err != nil {
 		log.Fatal(err)
 	}
