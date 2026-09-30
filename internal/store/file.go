@@ -6,21 +6,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
-// Path returns the data file location: $TB_FILE, else ~/.timeblock/data.json.
 func Path() string {
-	if p := os.Getenv("TB_FILE"); p != "" {
+	if p := os.Getenv("BOBA_FILE"); p != "" {
 		return p
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "."
 	}
-	return filepath.Join(home, ".timeblock", "data.json")
+	return filepath.Join(home, ".boba", "data.json")
 }
 
-// Load reads the store from path. A missing file yields a fresh store.
 func Load(path string) (*Store, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -39,7 +38,6 @@ func Load(path string) (*Store, error) {
 	return &s, nil
 }
 
-// Save writes the store atomically (temp file + rename).
 func (s *Store) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("save %s: %w", path, err)
@@ -56,4 +54,15 @@ func (s *Store) Save(path string) error {
 		return fmt.Errorf("save %s: %w", path, err)
 	}
 	return nil
+}
+
+func (s *Store) On(date string) []Block{
+	var out []Block
+	for _,b := range s.Blocks{
+		if b.Date == date {
+			out = append(out,b)
+		}
+	}
+	sort.Slice(out, func(i,j int) bool {return out[i].Start < out[j].Start})
+	return out
 }
