@@ -66,3 +66,12 @@ func (s *Store) On(date string) []Block{
 	sort.Slice(out, func(i,j int) bool {return out[i].Start < out[j].Start})
 	return out
 }
+
+func (s *Store) Find(id int) *Block {
+	for i := range s.Blocks {
+		if s.Blocks[i].ID == id {
+			return &s.Blocks[i]
+		}
+	}
+	return nil
+}
