@@ -66,7 +66,26 @@ func (s *Store) On(date string) []Block{
 	sort.Slice(out, func(i,j int) bool {return out[i].Start < out[j].Start})
 	return out
 }
-
+// Reschedule moves block id to newDate, rejecting the move if it would
+// overlap another block already on that date.
+func (s *Store) Reschedule(id int, newDate string) error {
+	blk := s.Find(id)
+	if blk == nil {
+		return errors.New("block not found")
+	}
+	candidate := *blk
+	candidate.Date = newDate
+	for _, e := range s.Blocks {
+		if e.ID == id {
+			continue
+		}
+		if candidate.Overlaps(e) {
+			return ErrOverlap
+		}
+	}
+	blk.Date = newDate
+	return nil
+}
 func (s *Store) Find(id int) *Block {
 	for i := range s.Blocks {
 		if s.Blocks[i].ID == id {

@@ -9,26 +9,18 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-
+	"charm.land/lipgloss/v2"
 	"github.com/Srijoy2007/bubbles-tui/internal/art"
 	"github.com/Srijoy2007/bubbles-tui/internal/board"
 	"github.com/Srijoy2007/bubbles-tui/internal/store"
+	"github.com/Srijoy2007/bubbles-tui/internal/theme"
 )
+
+type secondTickMsg struct{}
 
 var noColor = os.Getenv("NO_COLOR") != ""
 
-const (
-	reverseOn         = "\033[7m"
-	reverseOff        = "\033[0m"
-	splashMinDuration = 3200 * time.Millisecond
-)
-
-func highlight(s string) string {
-	if noColor {
-		return s
-	}
-	return reverseOn + s + reverseOff
-}
+const splashMinDuration = 3200 * time.Millisecond
 
 type mode int
 
@@ -36,6 +28,7 @@ const (
 	modeSplash mode = iota
 	modeList
 	modeAdd
+	modeFocus
 )
 
 type loadedMsg struct {
@@ -55,7 +48,20 @@ type model struct {
 	cursor        int
 	artFrame      int
 	splashFrame   int
-	splashStarted time.Time
+	splashStarted time.Time	
+	height,width int
+	focusID     int
+	focusEnd    time.Time
+	focusTotal  time.Duration
+	focusLeft   time.Duration // frozen remaining while paused
+	focusPaused bool
+	focusDone   bool
+}
+
+func secondTicker() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return secondTickMsg{}
+	})
 }
 
 func newModel() model {
@@ -83,11 +89,23 @@ func loadCmd() tea.Msg {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(loadCmd, artTimer())
+	return tea.Batch(loadCmd, artTimer(), secondTicker())
 }
-
+func (m model) showCup(nBlocks int) bool {
+	if m.width == 0 { // size not known yet
+		return true
+	}
+	return m.width >= 70 && m.height >= 28+max(0, nBlocks-10)
+}
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	
+	case secondTickMsg:
+		return m, secondTicker()
+	case tea.WindowSizeMsg:
+		m.width,m.height = msg.Width,msg.Height
+		return m,nil
+
 	case loadedMsg:
 		m.store = msg.s
 		m.err = msg.err
@@ -108,12 +126,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.finishSplash()
 			}
 		}
-
+		m.tickFocus()
 		return m, artTimer()
 
 	case tea.KeyPressMsg:
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.mode == modeFocus {
+			return m.focusKey(msg.String())
 		}
 
 		if m.mode == modeSplash {
@@ -181,7 +202,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeAdd
 			m.input.Focus()
 			return m, textinput.Blink
-
+		case "f":
+			m.startFocus()
+			return m, nil
 		case "j", "down":
 			blocks := m.store.On(m.viewDate)
 
@@ -197,7 +220,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			return m, nil
-
+        case "r":
+		nowMin := -1
+		if m.viewDate == time.Now().Format("2006-01-02") {
+			n := time.Now()
+			nowMin = n.Hour()*60 + n.Minute()
+		}
+		blocks := m.store.On(m.viewDate)
+		if m.cursor >= 0 && m.cursor < len(blocks) {
+			b := blocks[m.cursor]
+			if b.Status(nowMin) == store.StatusMissed {
+				t, _ := time.Parse("2006-01-02", m.viewDate)
+				tomorrow := t.AddDate(0, 0, 1).Format("2006-01-02")
+				if err := m.store.Reschedule(b.ID, tomorrow); err == nil {
+					_ = m.store.Save(store.Path())
+					if m.cursor > 0 && m.cursor >= len(blocks)-1 {
+						m.cursor--
+				}
+			}
+		}
+	}
+		return m, nil
 		case "space":
 			blocks := m.store.On(m.viewDate)
 
@@ -353,14 +396,14 @@ func splashView(m model) tea.View {
 		dots,
 	)
 
-	progress := float64(time.Since(m.splashStarted)) / float64(splashMinDuration)
+	pct := float64(time.Since(m.splashStarted)) / float64(splashMinDuration)
 
-	if progress > 1 {
-		progress = 1
+	if pct > 1 {
+		pct = 1
 	}
 
 	barWidth := 24
-	filled := int(progress * float64(barWidth))
+	filled := int(pct * float64(barWidth))
 
 	bar := strings.Repeat("━", filled) +
 		strings.Repeat("─", barWidth-filled)
@@ -399,6 +442,9 @@ func (m model) View() tea.View {
 	if m.store == nil {
 		return altScreen("loading...\n")
 	}
+	if m.mode == modeFocus {
+		return m.focusView()
+	}
 
 	realToday := time.Now().Format("2006-01-02")
 
@@ -407,81 +453,122 @@ func (m model) View() tea.View {
 			m.input.View() + "\n"
 
 		if m.addErr != "" {
-			out += "\n" + m.addErr + "\n"
+			out += "\n" + theme.Paint(theme.Missed, "", false, m.addErr) + "\n"
 		}
 
-		out += "\nenter save · esc cancel\n"
+		out += "\n" + theme.Paint(theme.Muted, "", false, "enter save · esc cancel") + "\n"
 
 		return altScreen(out)
 	}
 
 	blocks := m.store.On(m.viewDate)
 
-	cup := art.RenderSmallFrame(m.artFrame)
-
-	var content strings.Builder
-
-	content.WriteString(centerBlock(cup, 54))
-	content.WriteString("\n")
-
-	header := "boba — " + m.viewDate
-
+	// nowMin is -1 for any day other than today, so past/future days
+	// never show a live "current" or "missed" block.
+	nowMin := -1
 	if m.viewDate == realToday {
-		header += "  (today)"
+		now := time.Now()
+		nowMin = now.Hour()*60 + now.Minute()
 	}
 
-	content.WriteString(header + "\n")
-	content.WriteString("────────────────────────────────────────\n\n")
+	// Header + block list.
+	var text strings.Builder
+
+	header := theme.Paint(theme.Current, "", true, "boba") +
+		theme.Paint(theme.Muted, "", false, " — "+m.viewDate)
+	if m.viewDate == realToday {
+		header += theme.Paint(theme.Done, "", false, "  (today)")
+	}
+	text.WriteString(header + "\n")
+	text.WriteString(theme.Paint(theme.Border, "", false, strings.Repeat("─", 40)) + "\n\n")
 
 	if len(blocks) == 0 {
-		content.WriteString("nothing planned — press a to add a block\n")
-	} else {
-		for i, b := range blocks {
-			mark := " "
+		text.WriteString(theme.Paint(theme.Muted, "", false, "nothing planned — press a to add a block") + "\n")
+	}
 
-			if b.Done {
-				mark = "x"
-			}
+	titleW := 10
+	for _, b := range blocks {
+		if n := len([]rune(b.Title)); n > titleW {
+			titleW = n
+		}
+	}
+	for i, b := range blocks {
+		text.WriteString(renderRow(b, i == m.cursor, nowMin, titleW) + "\n")
+	}
 
-			cursor := " "
+	top := strings.TrimRight(text.String(), "\n")
 
-			if i == m.cursor {
-				cursor = ">"
-			}
+	// Cup beside the header when there's room, hidden otherwise.
+	if m.showCup(len(blocks)) {
+		cup := strings.TrimRight(art.RenderSmallFrame(m.artFrame), "\n")
+		top = lipgloss.JoinHorizontal(lipgloss.Center, cup, "   ", top)
+	}
 
-			line := fmt.Sprintf(
-				"%s[%s] %02d:%02d-%02d:%02d  %s",
-				cursor,
-				mark,
-				b.Start/60,
-				b.Start%60,
-				b.End/60,
-				b.End%60,
-				b.Title,
-			)
+	var content strings.Builder
+	content.WriteString(top + "\n\n")
+	content.WriteString(board.Render(blocks, 5, nowMin))
+	content.WriteString("\n\n")
+	content.WriteString(theme.Paint(theme.Muted, "", false, "[ / ] day · space done · f focus . a add · j/k move · q quit") + "\n")
 
-			if i == m.cursor {
-				line = highlight(line)
-			}
+	return altScreen(content.String())
+}
 
-			content.WriteString(line + "\n")
+func rowState(b store.Block, nowMin int) string {
+	switch {
+	case b.Done:
+		return "done"
+	case nowMin < 0:
+		return "planned"
+	case nowMin >= b.Start && nowMin < b.End:
+		return "current"
+	case nowMin >= b.End:
+		return "missed"
+	}
+	return "planned"
+}
+
+func fmtDur(m int) string {
+	switch {
+	case m < 60:
+		return fmt.Sprintf("%dm", m)
+	case m%60 == 0:
+		return fmt.Sprintf("%dh", m/60)
+	}
+	return fmt.Sprintf("%dh%02dm", m/60, m%60)
+}
+
+func renderRow(b store.Block, selected bool, nowMin, titleW int) string {
+	var dot, dotCol, txtCol string
+	bold := false
+	switch rowState(b, nowMin) {
+	case "done":
+		dot, dotCol, txtCol = "●", theme.Done, theme.Muted
+	case "current":
+		dot, dotCol, txtCol, bold = "●", theme.Current, theme.Text, true
+	case "missed":
+		dot, dotCol, txtCol = "○", theme.Missed, theme.Muted
+	default:
+		dot, dotCol, txtCol = "○", theme.Planned, theme.Text
+	}
+
+	bg := ""
+	marker := " "
+	if selected {
+		bg = theme.Sel
+		marker = "▌"
+		if theme.NoColor {
+			marker = ">"
 		}
 	}
 
-	now := time.Now()
+	sp := theme.Paint("", bg, false, " ")
+	timeRange := fmt.Sprintf("%02d:%02d–%02d:%02d", b.Start/60, b.Start%60, b.End/60, b.End%60)
 
-	content.WriteString("\n")
-	content.WriteString(
-		board.Render(
-			blocks,
-			5,
-			now.Hour()*60+now.Minute(),
-		),
-	)
-	content.WriteString("\n")
-	content.WriteString("\n[ / ] day · space done · a add · j/k move · q quit\n")
-
-	return altScreen(content.String())
+	return theme.Paint(theme.Current, bg, false, marker) + sp +
+		theme.Paint(dotCol, bg, false, dot) + sp +
+		theme.Paint(theme.Muted, bg, false, timeRange) + sp + sp +
+		theme.Paint(txtCol, bg, bold, fmt.Sprintf("%-*s", titleW, b.Title)) + sp + sp +
+		theme.Paint(theme.Muted, bg, false, fmt.Sprintf("%-6s", fmtDur(b.End-b.Start))) + sp
 }
 
 func centerBlock(s string, width int) string {
@@ -505,30 +592,9 @@ func centerBlock(s string, width int) string {
 
 	return b.String()
 }
-
 func ansiVisibleLen(s string) int {
-	n := 0
-	inEscape := false
-
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\033' {
-			inEscape = true
-			continue
-		}
-
-		if inEscape {
-			if s[i] >= '@' && s[i] <= '~' {
-				inEscape = false
-			}
-			continue
-		}
-
-		n++
-	}
-
-	return n
+	return lipgloss.Width(s)
 }
-
 func altScreen(s string) tea.View {
 	v := tea.NewView(s)
 	v.AltScreen = true

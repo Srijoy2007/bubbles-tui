@@ -16,10 +16,33 @@ type Store struct{
 
 
 }
+type Status int
 
+const (
+	StatusPlanned Status = iota
+	StatusCurrent
+	StatusDone
+	StatusMissed
+)
 var ErrInvalid = errors.New("start must be before end, within 0-1440")
 var ErrOverlap = errors.New("overlaps an existing block")
+func (b Block) Status(nowMin int) Status{
+	if b.Done{
+		return StatusDone
+	}
+	if nowMin < 0 {
+		return StatusPlanned
+	}
 
+	if nowMin>= b.Start && nowMin < b.End {
+		return StatusCurrent
+	}
+	if nowMin >= b.End{
+		return StatusMissed 
+	}
+
+	return StatusPlanned 
+}
 func (s *Store) Add(b Block) (Block, error){
 	if err := b.Validate(); err != nil{
 		return Block{},err 
