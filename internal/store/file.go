@@ -94,3 +94,22 @@ func (s *Store) Find(id int) *Block {
 	}
 	return nil
 }
+func (s *Store) DoneMinutes() map[string]int {
+	out := map[string]int{}
+	for _, b := range s.Blocks {
+		if !b.Done {
+			continue
+		}
+		out[b.Date] += b.End - b.Start
+	}
+	return out
+}
+func (s *Store) Remove(id int) error {
+	for i, b := range s.Blocks {
+		if b.ID == id {
+			s.Blocks = append(s.Blocks[:i], s.Blocks[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("block not found")
+}

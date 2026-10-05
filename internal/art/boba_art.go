@@ -124,29 +124,32 @@ func RenderSmallFrame(frame int) string {
 
 	return Render(bitmap, BobaPalette)
 }
-
 func resizeNearest(src []string, newW, newH int) []string {
 	if len(src) == 0 || newW <= 0 || newH <= 0 {
 		return nil
 	}
-
 	oldH := len(src)
 	oldW := len(src[0])
 	out := make([]string, newH)
-
 	for y := 0; y < newH; y++ {
 		row := make([]byte, newW)
 		sy := y * oldH / newH
+		if sy >= oldH {
+			sy = oldH - 1
+		}
+		srcRow := src[sy]
 		for x := 0; x < newW; x++ {
 			sx := x * oldW / newW
-			row[x] = src[sy][sx]
+			if sx >= len(srcRow) {
+				row[x] = '.'
+				continue
+			}
+			row[x] = srcRow[sx]
 		}
 		out[y] = string(row)
 	}
-
 	return out
 }
-
 func RenderFrame(frame int) string {
 	const n = 8
 
@@ -254,4 +257,167 @@ func hexRGB(hex string) (int, int, int) {
 	b, _ := strconv.ParseInt(hex[4:6], 16, 32)
 
 	return int(r), int(g), int(b)
+}
+
+// ============================================================
+// MASCOTS: BOBO THE BEAR and the BOBA CAT
+// ============================================================
+//
+// Both sprites are drawn as the LEFT HALF only (12 columns) and mirrored
+// at init, so they are perfectly symmetric and every row has the same
+// width by construction (hand-typed full rows drift by a pixel or two).
+//
+//	'.' transparent   k outline   f fur       h belly / chest highlight
+//	m muzzle          n nose      e eyes      p inner ear (cat)
+//	s animated shimmer
+//
+// Each mascot has two sizes with the same footprint as the cup:
+//
+//	*SmallFrame  24x24 px  (24 cols x 12 rows, dashboard header)
+//	*Frame       36x36 px  (36 cols x 18 rows, splash screen)
+
+const mascotNative = 24 // size the glint coordinates below are written in
+
+// mirror pads every half-row to the widest one and appends its reverse.
+func mirror(half []string) []string {
+	w := 0
+	for _, r := range half {
+		if len(r) > w {
+			w = len(r)
+		}
+	}
+	out := make([]string, len(half))
+	for i, r := range half {
+		r += strings.Repeat(".", w-len(r))
+		rev := make([]byte, w)
+		for x := 0; x < w; x++ {
+			rev[x] = r[w-1-x]
+		}
+		out[i] = r + string(rev)
+	}
+	return out
+}
+
+var bearHalf = []string{
+	"............",
+	"....kkkk....",
+	"...kffffk...",
+	"..kfffffkkkk",
+	".kffffffffff",
+	".kffffffffff",
+	".kffffffffff",
+	".kffffffffff",
+	".kfffffeffff",
+	".kfffffeffff",
+	".kfffffffmmm",
+	".kffffffmmmm",
+	".kffffffmmmn",
+	".kffffffmmmm",
+	"..kfffffffmm",
+	"..kfffffffff",
+	"...kkkkkkkkk",
+	"....kfffffff",
+	"...kffffhhhh",
+	"...kffffhhhh",
+	"...kffffhhhh",
+	"...kfffffhhh",
+	"....kkkkkkkk",
+	"............",
+}
+
+var catHalf = []string{
+	"............",
+	"...kk.......",
+	"..kppk......",
+	"..kpppk.....",
+	".kfpppfk....",
+	".kffffffkkkk",
+	".kffffffffff",
+	".kffffffffff",
+	".kffffffffff",
+	".kfffeefffff",
+	".kffffffmmmm",
+	".kffffffmmmn",
+	".kffffffmmmm",
+	".kffffffffff",
+	"..kfffffffff",
+	"...kkkkkkkkk",
+	"....kfffffff",
+	"...kffffhhhh",
+	"...kffffhhhh",
+	"...kfffffhhh",
+	"...kffffffff",
+	"....kfffffff",
+	".....kkkkkkk",
+	"............",
+}
+
+// BobaBear / BobaCat are the 24x24 sprites; the *Big versions are the same
+// art scaled 1.5x. The half is scaled BEFORE mirroring so symmetry survives.
+var (
+	BobaBear    = mirror(bearHalf)
+	BobaBearBig = mirror(resizeNearest(bearHalf, 18, 36))
+	BobaCat     = mirror(catHalf)
+	BobaCatBig  = mirror(resizeNearest(catHalf, 18, 36))
+)
+
+var BearPalette = Palette{
+	'k': "#2B1B17", // dark outline
+	'f': "#A9683F", // teddy fur
+	'h': "#D9A56C", // belly
+	'm': "#E8C18A", // muzzle
+	'n': "#241714", // nose
+	'e': "#241714", // eyes
+	's': "#FFF1D2", // shimmer
+}
+
+var CatPalette = Palette{
+	'k': "#35252A", // dark outline
+	'f': "#F0D7C9", // pale cream fur
+	'p': "#D98D9C", // pink inner ears
+	'h': "#E7BBA9", // chest highlight
+	'm': "#F4E4DB", // muzzle
+	'n': "#6D3541", // nose
+	'e': "#35252A", // eyes
+	's': "#FFF7F2", // shimmer
+}
+
+// Glint paths, in 24x24 coordinates (all land on fur).
+var (
+	bearGlints = [][2]int{{7, 6}, {10, 5}, {13, 6}, {16, 7}, {13, 8}, {10, 7}}
+	catGlints  = [][2]int{{7, 6}, {9, 6}, {11, 6}, {13, 7}, {11, 7}, {9, 7}}
+)
+
+// mascotFrame draws a sprite with a gentle 1px bob and a travelling glint.
+// The sprites keep their first and last rows empty, so the bob never clips.
+func mascotFrame(sprite []string, p Palette, glints [][2]int, frame int) string {
+	dy := []int{0, 0, 1, 1, 0, 0, -1, -1}[frame%8]
+
+	bitmap := shifted(sprite, 0, dy)
+
+	size := len(sprite)
+	g := glints[frame%len(glints)]
+	putIfPainted(bitmap, g[0]*size/mascotNative, g[1]*size/mascotNative+dy, 's')
+
+	return Render(bitmap, p)
+}
+
+// BearFrame renders Bobo at splash size.
+func BearFrame(frame int) string {
+	return mascotFrame(BobaBearBig, BearPalette, bearGlints, frame)
+}
+
+// BearSmallFrame renders Bobo at dashboard size.
+func BearSmallFrame(frame int) string {
+	return mascotFrame(BobaBear, BearPalette, bearGlints, frame)
+}
+
+// CatFrame renders the cat at splash size.
+func CatFrame(frame int) string {
+	return mascotFrame(BobaCatBig, CatPalette, catGlints, frame)
+}
+
+// CatSmallFrame renders the cat at dashboard size.
+func CatSmallFrame(frame int) string {
+	return mascotFrame(BobaCat, CatPalette, catGlints, frame)
 }

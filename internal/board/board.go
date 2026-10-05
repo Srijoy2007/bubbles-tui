@@ -88,8 +88,7 @@ func Render(blocks []store.Block, _ int, now int) string {
 
 	var out strings.Builder
 
-	out.WriteString(colorize(colText, "DAY TRACK"))
-	out.WriteString("\n")
+
 	out.WriteString(colorize(colBorder, strings.Repeat("─", width+len(pad))))
 	out.WriteString("\n")
 

@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Srijoy2007/bubbles-tui/internal/art"
+	"github.com/Srijoy2007/bubbles-tui/internal/audio"
 	"github.com/Srijoy2007/bubbles-tui/internal/store"
 	"github.com/Srijoy2007/bubbles-tui/internal/theme"
 )
@@ -92,6 +94,7 @@ func (m model) focusKey(k string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.focusDone { // any key leaves the "complete" screen
+		m.audio.Stop()
 		m.mode = modeList
 		return m, nil
 	}
@@ -113,7 +116,15 @@ func (m model) focusKey(k string) (tea.Model, tea.Cmd) {
 		m.focusTotal += 5 * time.Minute
 	case "d":
 		m.completeFocus()
+	case "m":
+		m.audioLevel = (m.audioLevel + 1) % len(audio.Tracks)
+		if m.audioLevel == 0 {
+			m.audio.Stop()
+		} else if err := m.audio.Start(audio.Tracks[m.audioLevel].URL); err != nil {
+			m.audioLevel = 0 // fall back to "off" silently rather than crash
+		}
 	case "esc", "q":
+		m.audio.Stop()
 		m.mode = modeList
 	}
 	return m, nil
@@ -186,6 +197,23 @@ func retroBar(frac float64, width int) string {
 		theme.Paint(theme.Empty, "", false, strings.Repeat("░", width-filled))
 }
 
+var barLevels = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+
+// musicViz draws a row of bars that ripple smoothly over time, each bar
+// phase-offset from its neighbor so they move like a real equalizer
+// rather than all pulsing in lockstep. Driven by the same artFrame
+// ticker that already runs every 90ms — no extra timer needed.
+func musicViz(frame, bars int) string {
+	var sb strings.Builder
+	for i := 0; i < bars; i++ {
+		phase := float64(frame)*0.25 + float64(i)*0.9
+		h := (math.Sin(phase) + 1) / 2 // normalize to 0..1
+		lvl := int(h * float64(len(barLevels)-1))
+		sb.WriteString(theme.Paint(theme.Current, "", false, barLevels[lvl]))
+	}
+	return sb.String()
+}
+
 func (m model) focusView() tea.View {
 	w := m.width
 	if w <= 0 {
@@ -234,7 +262,7 @@ func (m model) focusView() tea.View {
 			}
 		}
 
-		body = strings.Join([]string{
+		lines := []string{
 			retroBox("FOCUS", rows),
 			"",
 			theme.Paint(theme.Text, "", true, title) + "  " + theme.Paint(theme.Muted, "", false, rng),
@@ -242,9 +270,25 @@ func (m model) focusView() tea.View {
 			retroBar(frac, 40) + theme.Paint(theme.Muted, "", false, fmt.Sprintf("  %3d%%", int(frac*100))),
 			"",
 			status,
-			"",
-			theme.Paint(theme.Muted, "", false, "space pause · + 5min · d done · esc leave"),
-		}, "\n")
+		}
+
+		if m.audioLevel > 0 {
+			trackName := theme.Paint(theme.Muted, "", false, "♪ "+audio.Tracks[m.audioLevel].Name+"  ")
+			viz := trackName
+			if !m.focusPaused {
+				viz += musicViz(m.artFrame, 16)
+			} else {
+				viz += theme.Paint(theme.Muted, "", false, strings.Repeat("▁", 16))
+			}
+			lines = append(lines, "", viz)
+		}
+
+		lines = append(lines, "",
+			theme.Paint(theme.Muted, "", false,
+				"space pause · + 5min · d done · m music: "+audio.Tracks[m.audioLevel].Name+" · esc leave"),
+		)
+
+		body = strings.Join(lines, "\n")
 	}
 
 	top := 0
