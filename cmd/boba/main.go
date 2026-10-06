@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ type artTickMsg struct{}
 
 var noColor = os.Getenv("NO_COLOR") != ""
 
-const splashMinDuration = 3200 * time.Millisecond
+const splashMinDuration = 1200 * time.Millisecond
 
 type mode int
 
@@ -44,6 +45,7 @@ type loadedMsg struct {
 type model struct {
 	store         *store.Store
 	viewDate      string
+	today         string // calendar date, refreshed every second (midnight rollover)
 	err           error
 	mode          mode
 	input         textinput.Model
@@ -85,8 +87,11 @@ func newModel(p prefs.Prefs) model {
 	ti.Placeholder = "9-10:30 Deep work"
 	ti.CharLimit = 100
 
+	now := time.Now().Format("2006-01-02")
+
 	return model{
-		viewDate:      time.Now().Format("2006-01-02"),
+		viewDate:      now,
+		today:         now,
 		input:         ti,
 		mode:          modeSplash,
 		splashStarted: time.Now(),
@@ -123,6 +128,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case secondTickMsg:
+		if t := time.Now().Format("2006-01-02"); t != m.today {
+			if m.viewDate == m.today { // you were on "today": follow the calendar
+				m.viewDate, m.cursor = t, 0
+			}
+			m.today = t
+		}
 		return m, secondTicker()
 
 	case tea.WindowSizeMsg:
@@ -398,11 +409,12 @@ var splashFont = map[rune][]string{
 func renderSplashTitle(frame int) string {
 	const scale = 1
 
-	text := "BOBA T"
+	text := "BOBA"
 
 	var b strings.Builder
 
-	reveal := frame - 2
+	// Reveal three columns per frame: the whole title is visible in ~0.6s.
+	reveal := frame*3 - 2
 
 	if reveal < 0 {
 		reveal = 0
@@ -539,28 +551,34 @@ func splashView(m model) tea.View {
 		barWidth-filled,
 	)
 
+	// Center on the real terminal width (80 until the size is known).
+	w := m.width
+	if w == 0 {
+		w = 80
+	}
+
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(centerBlock(mascot, 54))
+	b.WriteString(centerBlock(mascot, w))
 	b.WriteString("\n")
-	b.WriteString(centerBlock(title, 54))
+	b.WriteString(centerBlock(title, w))
 	b.WriteString("\n")
-	b.WriteString(centerBlock(status, 54))
+	b.WriteString(centerBlock(status, w))
 	b.WriteString("\n")
-	b.WriteString(centerBlock(bar, 54))
+	b.WriteString(centerBlock(bar, w))
 	b.WriteString("\n\n")
 	b.WriteString(
 		centerBlock(
 			"small steps · big dreams",
-			54,
+			w,
 		),
 	)
 	b.WriteString("\n")
 	b.WriteString(
 		centerBlock(
 			"enter / space  skip",
-			54,
+			w,
 		),
 	)
 	b.WriteString("\n")
@@ -1118,6 +1136,16 @@ func main() {
 		}
 
 		switch os.Args[1] {
+
+		case "version", "--version", "-v":
+			v := "dev"
+			if bi, ok := debug.ReadBuildInfo(); ok &&
+				bi.Main.Version != "" &&
+				bi.Main.Version != "(devel)" {
+				v = bi.Main.Version
+			}
+			fmt.Println("boba", v)
+			return
 
 		case "bobo":
 			p := prefs.Load()
