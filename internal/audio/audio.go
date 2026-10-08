@@ -11,22 +11,20 @@ type Track struct {
 	URL  string
 }
 
-// Tracks[0] is always "off" — index 0 means nothing playing.
+
 var Tracks = []Track{
 	{Name: "off"},
 	{Name: "lofi", URL: "http://ice1.somafm.com/groovesalad-128-mp3"},
 	{Name: "ambient", URL: "http://ice1.somafm.com/dronezone-128-mp3"},
 }
 
-var ErrNoPlayer = errors.New("no audio player found — install mpv or ffplay")
+var ErrNoPlayer = errors.New("no audio player found — install mpv or ffplay.")
 
-// Player manages one background playback process at a time.
+
 type Player struct {
 	cmd *exec.Cmd
 }
 
-// Start stops whatever is currently playing, then launches url via the
-// first available player on the system.
 func (p *Player) Start(url string) error {
 	p.Stop()
 	bin, args, ok := findPlayer(url)
@@ -43,7 +41,6 @@ func (p *Player) Start(url string) error {
 	return nil
 }
 
-// Stop kills the running track, if any. Safe to call when nothing is playing.
 func (p *Player) Stop() {
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()

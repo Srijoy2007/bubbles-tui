@@ -7,8 +7,8 @@ import (
 )
 
 type Prefs struct {
-	Mascot string `json:"mascot"` // "cup" | "bear"
-	Theme  string `json:"theme"`  // "default" | "party"
+	Mascot string `json:"mascot"` 
+	Theme  string `json:"theme"`  
 }
 
 func Path() string {

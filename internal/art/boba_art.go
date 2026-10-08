@@ -6,15 +6,10 @@ import (
 	"strings"
 )
 
-// Palette maps one bitmap byte to an ANSI truecolor hex value.
-// '.' is transparent. 's' is the animated white shimmer.
 type Palette map[byte]string
 
 var reset = "\033[0m"
 
-// BobaCup is a 35x35 pixel-art reconstruction of the supplied cup image.
-// It is intentionally transparent around the character so it sits cleanly
-// on your TUI's dark background.
 var BobaCup = []string{
 	".............bbbbbbb..........ff...",
 	"...........iihccccccibb......ffffa.",
@@ -53,24 +48,19 @@ var BobaCup = []string{
 	".........iiiiii....................",
 }
 
-// BobaPalette is sampled/quantized from the supplied artwork.
 var BobaPalette = Palette{
-	'a': "#D2C2CF", // cool lavender
-	'b': "#896076", // dark mauve
-	'c': "#FDF9FB", // near-white highlight
-	'd': "#BB8A93", // dusty pink
-	'e': "#D9A6A1", // warm pink
-	'f': "#8DBAB0", // mint green
-	'g': "#F1CBBE", // peach
-	'h': "#EEE7EB", // pale lavender-white
-	'i': "#6A4958", // deep outline
-	'j': "#987B8D", // mid lavender
-	's': "#FFFFFF", // animated shimmer
+	'a': "#D2C2CF",
+	'b': "#896076",
+	'c': "#FDF9FB",
+	'd': "#BB8A93",
+	'e': "#D9A6A1",
+	'f': "#8DBAB0",
+	'g': "#F1CBBE",
+	'h': "#EEE7EB",
+	'i': "#6A4958",
+	'j': "#987B8D",
+	's': "#FFFFFF",
 }
-
-// Render turns a bitmap into ANSI truecolor half-block art.
-// Two bitmap rows become one terminal row, giving roughly 2x the
-// vertical resolution of ordinary one-character-per-pixel ASCII art.
 func Render(bitmap []string, p Palette) string {
 	var b strings.Builder
 
@@ -90,34 +80,23 @@ func Render(bitmap []string, p Palette) string {
 	return b.String()
 }
 
-// Width returns the visible terminal width of the bitmap.
+
 func Width() int {
 	if len(BobaCup) == 0 {
 		return 0
 	}
 	return len(BobaCup[0])
 }
-
-// RenderFrame adds a subtle "alive" animation:
-//   - the cup gently floats/bobs,
-//   - a bright shimmer travels across the cup,
-//   - a second glint periodically hits the mint leaf.
-//
-// The animation never changes the underlying pixel-art shape.
-// RenderSmallFrame renders a compact version for the persistent dashboard header.
-// It uses nearest-neighbour downsampling so the pixel-art character remains crisp.
 func RenderSmallFrame(frame int) string {
 	const smallW = 24
 	const smallH = 24
 
 	bitmap := resizeNearest(BobaCup, smallW, smallH)
 
-	// Reuse the same animation idea, but with a gentler motion for the dashboard.
 	dx := []int{0, 0, 0, 1, 1, 0, 0, -1, -1, 0}[frame%10]
 	dy := []int{0, 0, -1, -1, 0, 0, 1, 1, 0, 0}[frame%10]
 	bitmap = shifted(bitmap, dx, dy)
 
-	// Small travelling highlight.
 	points := [][2]int{{9, 9}, {11, 8}, {13, 8}, {15, 9}, {13, 10}, {11, 10}}
 	pt := points[frame%len(points)]
 	putIfPainted(bitmap, pt[0]+dx, pt[1]+dy, 's')
@@ -158,7 +137,6 @@ func RenderFrame(frame int) string {
 
 	bitmap := shifted(BobaCup, dx, dy)
 
-	// Moving highlight across the upper body.
 	shimmer := [][2]int{
 		{15, 14}, {18, 13}, {21, 12}, {24, 11},
 		{27, 10}, {24, 13}, {21, 14}, {18, 15},
@@ -167,7 +145,6 @@ func RenderFrame(frame int) string {
 	sx, sy := shimmer[frame%n][0]+dx, shimmer[frame%n][1]+dy
 	putIfPainted(bitmap, sx, sy, 's')
 
-	// Occasional tiny glint on the mint leaf.
 	if frame%8 == 2 || frame%8 == 3 {
 		putIfPainted(bitmap, 29+dx, 4+dy, 's')
 	}
@@ -258,27 +235,7 @@ func hexRGB(hex string) (int, int, int) {
 
 	return int(r), int(g), int(b)
 }
-
-// ============================================================
-// MASCOTS: BOBO THE BEAR and the BOBA CAT
-// ============================================================
-//
-// Both sprites are drawn as the LEFT HALF only (12 columns) and mirrored
-// at init, so they are perfectly symmetric and every row has the same
-// width by construction (hand-typed full rows drift by a pixel or two).
-//
-//	'.' transparent   k outline   f fur       h belly / chest highlight
-//	m muzzle          n nose      e eyes      p inner ear (cat)
-//	s animated shimmer
-//
-// Each mascot has two sizes with the same footprint as the cup:
-//
-//	*SmallFrame  24x24 px  (24 cols x 12 rows, dashboard header)
-//	*Frame       36x36 px  (36 cols x 18 rows, splash screen)
-
-const mascotNative = 24 // size the glint coordinates below are written in
-
-// mirror pads every half-row to the widest one and appends its reverse.
+const mascotNative = 24
 func mirror(half []string) []string {
 	w := 0
 	for _, r := range half {
@@ -351,9 +308,6 @@ var catHalf = []string{
 	".....kkkkkkk",
 	"............",
 }
-
-// BobaBear / BobaCat are the 24x24 sprites; the *Big versions are the same
-// art scaled 1.5x. The half is scaled BEFORE mirroring so symmetry survives.
 var (
 	BobaBear    = mirror(bearHalf)
 	BobaBearBig = mirror(resizeNearest(bearHalf, 18, 36))
@@ -362,34 +316,32 @@ var (
 )
 
 var BearPalette = Palette{
-	'k': "#2B1B17", // dark outline
-	'f': "#A9683F", // teddy fur
-	'h': "#D9A56C", // belly
-	'm': "#E8C18A", // muzzle
-	'n': "#241714", // nose
-	'e': "#241714", // eyes
-	's': "#FFF1D2", // shimmer
+	'k': "#2B1B17",
+	'f': "#A9683F",
+	'h': "#D9A56C", 
+	'm': "#E8C18A", 
+	'n': "#241714", 
+	'e': "#241714", 
+	's': "#FFF1D2",
 }
 
 var CatPalette = Palette{
-	'k': "#35252A", // dark outline
-	'f': "#F0D7C9", // pale cream fur
-	'p': "#D98D9C", // pink inner ears
-	'h': "#E7BBA9", // chest highlight
-	'm': "#F4E4DB", // muzzle
-	'n': "#6D3541", // nose
-	'e': "#35252A", // eyes
-	's': "#FFF7F2", // shimmer
+	'k': "#35252A", 
+	'f': "#F0D7C9", 
+	'p': "#D98D9C", 
+	'h': "#E7BBA9", 
+	'm': "#F4E4DB", 
+	'n': "#6D3541", 
+	'e': "#35252A", 
+	's': "#FFF7F2", 
 }
 
-// Glint paths, in 24x24 coordinates (all land on fur).
+
 var (
 	bearGlints = [][2]int{{7, 6}, {10, 5}, {13, 6}, {16, 7}, {13, 8}, {10, 7}}
 	catGlints  = [][2]int{{7, 6}, {9, 6}, {11, 6}, {13, 7}, {11, 7}, {9, 7}}
 )
 
-// mascotFrame draws a sprite with a gentle 1px bob and a travelling glint.
-// The sprites keep their first and last rows empty, so the bob never clips.
 func mascotFrame(sprite []string, p Palette, glints [][2]int, frame int) string {
 	dy := []int{0, 0, 1, 1, 0, 0, -1, -1}[frame%8]
 
@@ -402,22 +354,19 @@ func mascotFrame(sprite []string, p Palette, glints [][2]int, frame int) string 
 	return Render(bitmap, p)
 }
 
-// BearFrame renders Bobo at splash size.
 func BearFrame(frame int) string {
 	return mascotFrame(BobaBearBig, BearPalette, bearGlints, frame)
 }
 
-// BearSmallFrame renders Bobo at dashboard size.
+
 func BearSmallFrame(frame int) string {
 	return mascotFrame(BobaBear, BearPalette, bearGlints, frame)
 }
 
-// CatFrame renders the cat at splash size.
 func CatFrame(frame int) string {
 	return mascotFrame(BobaCatBig, CatPalette, catGlints, frame)
 }
 
-// CatSmallFrame renders the cat at dashboard size.
 func CatSmallFrame(frame int) string {
 	return mascotFrame(BobaCat, CatPalette, catGlints, frame)
 }

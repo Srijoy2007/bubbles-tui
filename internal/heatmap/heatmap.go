@@ -9,13 +9,7 @@ import (
 
 var dayLabels = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 
-// Render draws a GitHub-style contribution grid for the given number of
-// weeks ending with the current week. minutesByDate maps "YYYY-MM-DD" to
-// total done minutes that day (from Store.DoneMinutes).
-//
-// Shading is relative to the busiest day in the visible window, not a
-// fixed hour count — so the heatmap stays meaningful whether your days
-// run 1-hour or 8-hour, rather than everything looking maxed-out or empty.
+
 func Render(minutesByDate map[string]int, weeks int) string {
 	today := time.Now()
 	thisWeekSunday := today.AddDate(0, 0, -int(today.Weekday()))
@@ -80,8 +74,6 @@ func levelFor(mins, max int) int {
 	}
 }
 
-// levelGlyph re-reads theme colors on every call (rather than caching
-// them once) so the heatmap still reflects theme party/default correctly.
 func levelGlyph(level int) string {
 	switch level {
 	case 0:

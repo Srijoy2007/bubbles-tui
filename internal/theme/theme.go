@@ -73,8 +73,7 @@ func Paint(fg, bg string, bold bool, s string) string {
 	return st.Render(s)
 }
 
-// Box draws a rounded, theme-colored border around content, with an
-// optional title embedded in the top edge.
+
 func Box(title, content string) string {
 	lines := splitLines(content)
 	inner := 0

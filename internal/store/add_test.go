@@ -12,7 +12,7 @@ func TestAdd(t *testing.T) {
 		name    string
 		b       Block
 		wantErr bool
-		isClash bool // expect ErrOverlap specifically
+		isClash bool 
 	}{
 		{"valid", Block{Date: "2026-09-29", Start: 700, End: 760, Title: "B"}, false, false},
 		{"empty title", Block{Date: "2026-09-29", Start: 700, End: 760}, true, false},

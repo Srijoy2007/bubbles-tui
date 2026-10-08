@@ -12,15 +12,15 @@ import (
 var noColor = os.Getenv("NO_COLOR") != ""
 
 const (
-	// Boba theme — soft pink / lavender.
-	colDone    = "#B1A4DC" // lavender
-	colMissed  = "#D27D9B" // muted rose
-	colPlanned = "#9694AF" // muted lavender-gray
-	colEmpty   = "#4B4C5C" // dark gray
-	colCurrent = "#E797BE" // boba pink
-	colBorder  = "#69697D" // soft border
-	colText    = "#BEBCCD" // soft text
-	colMuted   = "#78768C" // dim label
+	
+	colDone    = "#B1A4DC" 
+	colMissed  = "#D27D9B" 
+	colPlanned = "#9694AF" 
+	colEmpty   = "#4B4C5C" 
+	colCurrent = "#E797BE" 
+	colBorder  = "#69697D" 
+	colText    = "#BEBCCD" 
+	colMuted   = "#78768C" 
 )
 
 const minutesDay = 1440
@@ -60,8 +60,6 @@ func glyph(s string) string {
 	}
 }
 
-// hourAxis places each two-character hour label at the exact column it
-// falls on, so it always lines up with the timeline below it, at any width.
 func hourAxis(width int) string {
 	buf := []rune(strings.Repeat(" ", width))
 	for hour := 0; hour < 24; hour += 2 {
@@ -75,13 +73,10 @@ func hourAxis(width int) string {
 	return string(buf)
 }
 
-// Render draws a single card: an hour-labeled timeline, a now-marker,
-// a totals summary, and one compact pearl-progress row per block.
-// The resolution parameter from earlier callers is kept for compatibility
-// but no longer used — the timeline width itself sets the granularity.
+
 func Render(blocks []store.Block, _ int, now int) string {
 	const (
-		width = 72 // divides 1440 evenly: 20 minutes per column
+		width = 72 
 		pad   = "  "
 	)
 	cellMinutes := minutesDay / width
@@ -145,7 +140,7 @@ func Render(blocks []store.Block, _ int, now int) string {
 	return out.String()
 }
 
-// summaryLine totals done/missed/planned time across all of today's blocks.
+
 func summaryLine(blocks []store.Block, now int) string {
 	plannedMin, doneMin, missedMin := 0, 0, 0
 	for _, b := range blocks {
@@ -163,8 +158,6 @@ func summaryLine(blocks []store.Block, now int) string {
 		colorize(colMuted, "of "+fmtDur(plannedMin)+" planned")
 }
 
-// blockRow renders one line: a status dot, the time range, the title,
-// and a small pearl bar showing progress through the block.
 func blockRow(b store.Block, now int) string {
 	const barW = 10
 
