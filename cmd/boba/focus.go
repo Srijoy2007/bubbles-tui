@@ -33,7 +33,6 @@ var digitFont = map[rune][]string{
 	':': {"0", "0", "1", "0", "1", "0", "0"},
 }
 
-// ---- state transitions ----
 
 func (m *model) startFocus() {
 	if m.store == nil || m.viewDate != time.Now().Format("2006-01-02") {
@@ -81,12 +80,17 @@ func (m *model) tickFocus() {
 	}
 }
 
-func (m *model) completeFocus() {
-	if blk := m.store.Find(m.focusID); blk != nil {
-		blk.Done = true
-		_ = m.store.Save(store.Path())
-	}
-	m.focusDone = true
+func (m *model) completeFocus(){
+	id := m.focusID 
+	m.apply(func(s *store.Store) error{
+		blk := s.Find(id)
+		if blk == nil {
+			return errGone 
+		}
+		blk.Done = true 
+		return nil 
+	})
+	m.focusDone = true 
 }
 
 func (m model) focusKey(k string) (tea.Model, tea.Cmd) {
@@ -117,20 +121,30 @@ func (m model) focusKey(k string) (tea.Model, tea.Cmd) {
 	case "d":
 		m.completeFocus()
 	case "m":
-		m.audioLevel = (m.audioLevel + 1) % len(audio.Tracks)
-		if m.audioLevel == 0 {
-			m.audio.Stop()
-		} else if err := m.audio.Start(audio.Tracks[m.audioLevel].URL); err != nil {
-			m.audioLevel = 0 // fall back to "off" silently rather than crash
-		}
+	m.audioErr = ""
+	next := (m.audioLevel + 1) % len(audio.Tracks)
+	if next == 0 {
+		m.audio.Stop()
+		m.audioLevel = 0
+	} else if err := m.audio.Start(audio.Tracks[next].URL); err != nil {
+		m.audio.Stop()
+		m.audioLevel = 0
+		m.audioErr = err.Error()
+	} else {
+		m.audioLevel = next
+	}
 	case "esc", "q":
 		m.audio.Stop()
+		m.audioErr = ""
 		m.mode = modeList
-	}
+	}	
+	
 	return m, nil
+	
+	
 }
 
-// ---- rendering ----
+
 
 func clockText(d time.Duration) string {
 	secs := int((d + time.Second - 1) / time.Second) // round up
@@ -199,15 +213,12 @@ func retroBar(frac float64, width int) string {
 
 var barLevels = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
 
-// musicViz draws a row of bars that ripple smoothly over time, each bar
-// phase-offset from its neighbor so they move like a real equalizer
-// rather than all pulsing in lockstep. Driven by the same artFrame
-// ticker that already runs every 90ms — no extra timer needed.
+
 func musicViz(frame, bars int) string {
 	var sb strings.Builder
 	for i := 0; i < bars; i++ {
 		phase := float64(frame)*0.25 + float64(i)*0.9
-		h := (math.Sin(phase) + 1) / 2 // normalize to 0..1
+		h := (math.Sin(phase) + 1) / 2 
 		lvl := int(h * float64(len(barLevels)-1))
 		sb.WriteString(theme.Paint(theme.Current, "", false, barLevels[lvl]))
 	}
@@ -283,10 +294,14 @@ func (m model) focusView() tea.View {
 			lines = append(lines, "", viz)
 		}
 
+
 		lines = append(lines, "",
 			theme.Paint(theme.Muted, "", false,
 				"space pause · + 5min · d done · m music: "+audio.Tracks[m.audioLevel].Name+" · esc leave"),
 		)
+		if m.audioErr != "" {
+			lines = append(lines, "", theme.Paint(theme.Missed, "", false, m.audioErr))
+			}
 
 		body = strings.Join(lines, "\n")
 	}

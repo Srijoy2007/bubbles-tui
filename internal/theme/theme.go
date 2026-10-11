@@ -90,7 +90,7 @@ func Box(title, content string) string {
 	var sb strings.Builder
 	if title != "" {
 		label := Paint(Current, "", true, " "+title+" ")
-		dashes := inner - lipgloss.Width(label)
+		dashes := inner - 1 - lipgloss.Width(label)
 		if dashes < 0 {
 			dashes = 0
 		}

@@ -7,7 +7,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
-
+	"errors"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -45,7 +45,8 @@ type loadedMsg struct {
 type model struct {
 	store         *store.Store
 	viewDate      string
-	today         string // calendar date, refreshed every second (midnight rollover)
+	today         string
+	
 	err           error
 	mode          mode
 	input         textinput.Model
@@ -68,6 +69,9 @@ type model struct {
 
 	audio      audio.Player
 	audioLevel int
+
+	flash string 
+	audioErr string 
 }
 
 func secondTicker() tea.Cmd {
@@ -201,30 +205,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "enter":
-				b, err := parseAdd(
-					m.viewDate,
-					m.input.Value(),
-				)
-
-				if err == nil {
-					_, err = m.store.Add(b)
+				b,err := parseAdd(m.viewDate,m.input.Value())
+				if err == nil{
+					err = m.mutate(func(s *store.Store) error {
+						_,e := s.Add(b)
+						return e 
+					})
 				}
-
-				if err == nil {
-					err = m.store.Save(store.Path())
-				}
-
-				if err != nil {
-					m.addErr = err.Error()
-					return m, nil
-				}
-
-				m.mode = modeList
+				m.mode = modeList 
 				m.input.Reset()
 				m.addErr = ""
-
-				return m, nil
-			}
+				return m,nil 
+						}
 
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
@@ -286,60 +278,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "r":
-			nowMin := -1
-
-			if m.viewDate == time.Now().Format("2006-01-02") {
-				now := time.Now()
-				nowMin = now.Hour()*60 + now.Minute()
+			nowMin := -1 
+			if m.viewDate == time.Now().Format("2006-01-02"){
+				n := time.Now()
+				nowMin = n.Hour()*6+n.Minute()
 			}
-
 			blocks := m.store.On(m.viewDate)
-
-			if m.cursor >= 0 && m.cursor < len(blocks) {
+			if m.cursor >= 0 && m.cursor < len(blocks){
 				b := blocks[m.cursor]
-
-				if b.Status(nowMin) == store.StatusMissed {
-					t, _ := time.Parse(
-						"2006-01-02",
-						m.viewDate,
-					)
-
-					tomorrow := t.
-						AddDate(0, 0, 1).
-						Format("2006-01-02")
-
-					if err := m.store.Reschedule(
-						b.ID,
-						tomorrow,
-					); err == nil {
-						_ = m.store.Save(store.Path())
-
-						if m.cursor > 0 &&
-							m.cursor >= len(blocks)-1 {
-							m.cursor--
-						}
+				if b.Status(nowMin) == store.StatusMissed{
+					t,_ := time.Parse("2006-01-02",m.viewDate)
+					tomorow := t.AddDate(0,0,1).Format("2006-01-02")
+					id := b.ID 
+					m.apply(func(s *store.Store) error{ return s.Reschedule(id,tomorow) })
+					if m.flash == "" && m.cursor > 0 && m.cursor >= len(blocks)-1{
+						m.cursor-- 
 					}
 				}
 			}
-
-			return m, nil
-
+			return m,nil 
 		case "space":
 			blocks := m.store.On(m.viewDate)
-
-			if m.cursor >= 0 &&
-				m.cursor < len(blocks) {
-
-				b := blocks[m.cursor]
-				blk := m.store.Find(b.ID)
-
-				if blk != nil {
-					blk.Done = !blk.Done
-					_ = m.store.Save(store.Path())
-				}
+			if m.cursor >= 0 && m.cursor < len(blocks){
+				id := blocks[m.cursor].ID 
+				m.apply(func(s *store.Store) error{
+					blk := s.Find(id)
+					if blk == nil {
+						return errGone 
+					}
+					blk.Done = !blk.Done 
+					return nil 
+				})
 			}
-
-			return m, nil
+			return m,nil 
 		}
 	}
 
@@ -354,9 +325,6 @@ func (m *model) finishSplash() {
 	m.mode = modeList
 }
 
-// ============================================================
-// SPLASH
-// ============================================================
 
 var splashFont = map[rune][]string{
 	'B': {
@@ -413,7 +381,6 @@ func renderSplashTitle(frame int) string {
 
 	var b strings.Builder
 
-	// Reveal three columns per frame: the whole title is visible in ~0.6s.
 	reveal := frame*3 - 2
 
 	if reveal < 0 {
@@ -475,9 +442,6 @@ func splashPixelColor(frame, x int) string {
 	return "\033[38;2;177;164;220m"
 }
 
-// ============================================================
-// MASCOTS
-// ============================================================
 
 func (m model) cupArt() string {
 	switch m.mascot {
@@ -551,7 +515,6 @@ func splashView(m model) tea.View {
 		barWidth-filled,
 	)
 
-	// Center on the real terminal width (80 until the size is known).
 	w := m.width
 	if w == 0 {
 		w = 80
@@ -586,9 +549,6 @@ func splashView(m model) tea.View {
 	return altScreen(b.String())
 }
 
-// ============================================================
-// MAIN VIEW
-// ============================================================
 
 func (m model) View() tea.View {
 	if m.mode == modeSplash {
@@ -656,9 +616,6 @@ func (m model) View() tea.View {
 		nowMin = now.Hour()*60 + now.Minute()
 	}
 
-	// ========================================================
-	// LEFT: SCHEDULE
-	// ========================================================
 
 	var left strings.Builder
 
@@ -742,9 +699,7 @@ func (m model) View() tea.View {
 		)
 	}
 
-	// ========================================================
-	// RIGHT: STATS
-	// ========================================================
+
 
 	doneMin := 0
 	missedMin := 0
@@ -841,11 +796,6 @@ func (m model) View() tea.View {
 		),
 	)
 
-	// ========================================================
-	// DAY + RHYTHM
-	//
-	// These intentionally live inside ONE box.
-	// ========================================================
 
 	dayTrack := board.Render(
 		blocks,
@@ -858,7 +808,6 @@ func (m model) View() tea.View {
 		"\n",
 	)
 
-	// Heatmap stays directly underneath DAY.
 	if m.width == 0 || m.width >= 90 {
 		rhythm := heatmap.Render(
 			m.store.DoneMinutes(),
@@ -883,10 +832,6 @@ func (m model) View() tea.View {
 		"DAY",
 		dayContent,
 	)
-
-	// ========================================================
-	// LAYOUT
-	// ========================================================
 
 	top := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -917,9 +862,6 @@ func (m model) View() tea.View {
 	return altScreen(content)
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
 
 func rowState(
 	b store.Block,
@@ -1125,9 +1067,6 @@ func altScreen(s string) tea.View {
 	return v
 }
 
-// ============================================================
-// MAIN
-// ============================================================
 
 func main() {
 	if len(os.Args) > 1 {
@@ -1205,4 +1144,43 @@ func main() {
 	).Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+var errGone = errors.New("block no longer exists")
+
+func  (m *model) mutate(fn func(*store.Store) error) error{
+	fresh, err := store.Load(store.Path())
+	if err == nil{
+		err = fn(fresh)
+	}
+	if err == nil{
+		err = fresh.Save(store.Path())
+	}
+	if err != nil {
+		return err 
+	}
+
+	m.store = fresh 
+	return nil 
+}
+
+// function trying to apply the same logic as mutate to places where there are no input boxes :| 
+// that means one if statement which will report failure in flash 
+// just will use the prev mutate function 
+
+
+func ( m *model ) apply(fn func(*store.Store)error){
+	if err:= m.mutate(fn); err!=nil {
+		m.flash = err.Error()
+		return 
+	}
+	m.flash = ""
+}
+
+
+func(m model) flashLine() string{
+	if m.flash == ""{
+		return ""
+	}
+	return theme.Paint(theme.Missed,"",false,m.flash)
 }

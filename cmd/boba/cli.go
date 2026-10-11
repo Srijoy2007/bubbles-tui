@@ -11,7 +11,7 @@ import (
 	"github.com/Srijoy2007/bubbles-tui/internal/store"
 )
 
-const version = "0.1.0"
+const version = "0.1.1"
 
 const helpText = `boba — time blocking for your terminal
 
